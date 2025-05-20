@@ -238,6 +238,9 @@
       <Filter>network_messages</Filter>
     </ClInclude>
     <ClInclude Include="K12/kangaroo_twelve_xkcp.h" />
+    <ClInclude Include="contracts\VottunBridge.h">
+      <Filter>contracts</Filter>
+    </ClInclude>
     <ClInclude Include="contracts\TestExampleC.h">
       <Filter>contracts</Filter>
     </ClInclude>
