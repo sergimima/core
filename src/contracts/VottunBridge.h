@@ -1,7 +1,5 @@
 #pragma once
 
-#include "qpi.h"
-
 using namespace QPI;
 
 struct VOTTUNBRIDGE2 {
@@ -15,9 +13,9 @@ public:
     // Bridge Order Structure
     struct BridgeOrder
     {
-        uint64 orderId;          // Unique ID for the order
         id qubicSender;          // Sender address on Qubic
         id ethAddress;           // Destination Ethereum address
+        uint64 orderId;          // Unique ID for the order
         uint64 amount;           // Amount to transfer
         uint8 orderType;         // Type of order (e.g., mint, transfer)
         uint8 status;            // Order status (e.g., Created, Pending, Refunded)
@@ -112,9 +110,9 @@ public:
     // Order Response Structure
     struct OrderResponse
     {
-        uint64 orderId;        // Order ID as uint64
         id originAccount;      // Origin account
         id destinationAccount; // Destination account
+        uint64 orderId;        // Order ID as uint64
         uint64 amount;         // Amount as uint64
         Array<uint8, 64> memo; // Notes or metadata
         uint32 sourceChain;    // Source chain identifier
@@ -127,9 +125,9 @@ public:
 
     struct getOrder_output
     {
+        OrderResponse order; // Updated response format
         uint8 status;
         Array<uint8, 32> message;
-        OrderResponse order; // Updated response format
     };
 
     struct getAdminID_input
@@ -154,9 +152,9 @@ public:
 
     struct AddressChangeLogger
     {
+        id _newAdminAddress; // New admin address
         uint32 _contractIndex;
         uint8 _eventCode;    // Event code 'adminchanged'
-        id _newAdminAddress; // New admin address
         char _terminator;
     };
 
@@ -196,13 +194,14 @@ public:
     };
 
 private:
+
     // Contract State
     Array<BridgeOrder, 256> orders; // Storage for orders (fixed size)
+    id admin;                       // Admin address
+    Array<id, 16> managers;         // Managers list
     uint64 nextOrderId;             // Counter for order IDs
     uint64 lockedTokens;            // Total locked tokens in the contract (balance)
     uint64 transactionFee;          // Fee for creating an order
-    id admin;                       // Admin address
-    Array<id, 16> managers;         // Managers list
     uint64 totalReceivedTokens;     // Total tokens received
     uint32 sourceChain;             // Source chain identifier
 
@@ -237,10 +236,10 @@ public:
     {
         BridgeOrder newOrder;
         EthBridgeLogger log;
+        uint64 i;
     };
 
     PUBLIC_PROCEDURE_WITH_LOCALS(createOrder)
-
     { // Validate the input
         if (input.amount == 0)
         {
@@ -278,11 +277,11 @@ public:
         locals.newOrder.fromQubicToEthereum = input.fromQubicToEthereum;
 
         // Store the order
-        for (uint64 i = 0; i < state.orders.capacity(); ++i)
+        for (locals.i = 0; locals.i < state.orders.capacity(); ++locals.i)
         {
-            if (state.orders.get(i).status == 255)
+            if (state.orders.get(locals.i).status == 255)
             { // Empty slot
-                state.orders.set(i, locals.newOrder);
+                state.orders.set(locals.i, locals.newOrder);
 
                 locals.log = EthBridgeLogger{
                     CONTRACT_INDEX,
@@ -303,13 +302,14 @@ public:
         EthBridgeLogger log;
         BridgeOrder order;
         OrderResponse orderResp;
+        uint64 i;
     };
 
     PUBLIC_FUNCTION_WITH_LOCALS(getOrder)
     {
-        for (uint64 i = 0; i < state.orders.capacity(); ++i)
+        for (locals.i = 0; locals.i < state.orders.capacity(); ++locals.i)
         {
-            locals.order = state.orders.get(i);
+            locals.order = state.orders.get(locals.i);
             if (locals.order.orderId == input.orderId && locals.order.status != 255)
             {
                 // Populate OrderResponse with BridgeOrder data
@@ -317,7 +317,6 @@ public:
                 locals.orderResp.originAccount = locals.order.qubicSender;
                 locals.orderResp.destinationAccount = locals.order.ethAddress;
                 locals.orderResp.amount = locals.order.amount;
-                constexpr char placeholderMemo[64] = "Bridge transfer details"; // Placeholder for metadata
                 locals.orderResp.sourceChain = state.sourceChain;
 
                 locals.log = EthBridgeLogger{
@@ -370,9 +369,9 @@ public:
         state.admin = input.address;
         // Logging the admin address has changed
         locals.adminLog = AddressChangeLogger{
+            input.address,
             CONTRACT_INDEX,
             1, // Event code "Admin Changed"
-            input.address,
             0};
 
         LOG_INFO(locals.adminLog);
@@ -391,6 +390,7 @@ public:
     {
         EthBridgeLogger log;
         AddressChangeLogger managerLog;
+        uint64 i;
     };
 
     PUBLIC_PROCEDURE_WITH_LOCALS(addManager)
@@ -409,16 +409,16 @@ public:
             return;
         }
 
-        for (uint64 i = 0; i < state.managers.capacity(); ++i)
+        for (locals.i = 0; locals.i < state.managers.capacity(); ++locals.i)
         {
-            if (state.managers.get(i) == NULL_ID)
+            if (state.managers.get(locals.i) == NULL_ID)
             { // Slot vacío
-                state.managers.set(i, input.address);
+                state.managers.set(locals.i, input.address);
 
                 locals.managerLog = AddressChangeLogger{
+                    input.address,
                     CONTRACT_INDEX,
                     2, // Manager added
-                    input.address,
                     0};
                 LOG_INFO(locals.managerLog);
                 output.status = 0; // Success
@@ -440,10 +440,10 @@ public:
     {
         EthBridgeLogger log;
         AddressChangeLogger managerLog;
+        uint64 i;
     };
 
     PUBLIC_PROCEDURE_WITH_LOCALS(removeManager)
-
     {
         if (qpi.invocator() != state.admin)
         {
@@ -459,16 +459,16 @@ public:
             return;
         }
 
-        for (uint64 i = 0; i < state.managers.capacity(); ++i)
+        for (locals.i = 0; locals.i < state.managers.capacity(); ++locals.i)
         {
-            if (state.managers.get(i) == input.address)
+            if (state.managers.get(locals.i) == input.address)
             {
-                state.managers.set(i, NULL_ID);
+                state.managers.set(locals.i, NULL_ID);
 
                 locals.managerLog = AddressChangeLogger{
+                    input.address,
                     CONTRACT_INDEX,
                     3, // Manager removed
-                    input.address,
                     0};
                 LOG_INFO(locals.managerLog);
                 output.status = 0; // Success
@@ -491,20 +491,20 @@ public:
         EthBridgeLogger log;
     };
 
-    PUBLIC_FUNCTION_WITH_LOCALS(getTotalReceivedTokens){
-
-    locals.log = EthBridgeLogger{
-        CONTRACT_INDEX,
-        0,                         // No error
-        0,                         // No order ID involved
-        state.totalReceivedTokens, // Amount of total tokens
-        0};
-    LOG_INFO(locals.log);
-    output.totalTokens = state.totalReceivedTokens;
-}
+    PUBLIC_FUNCTION_WITH_LOCALS(getTotalReceivedTokens)
+    {
+        locals.log = EthBridgeLogger{
+            CONTRACT_INDEX,
+            0,                         // No error
+            0,                         // No order ID involved
+            state.totalReceivedTokens, // Amount of total tokens
+            0};
+        LOG_INFO(locals.log);
+        output.totalTokens = state.totalReceivedTokens;
+    }
     
 
-        struct completeOrder_locals
+    struct completeOrder_locals
     {
         EthBridgeLogger log;
         id invocatorAddress;
@@ -512,6 +512,7 @@ public:
         bit orderFound;
         BridgeOrder order;
         TokensLogger logTokens;
+        uint64 i;
     };
 
     // Complete an order and release tokens
@@ -523,11 +524,11 @@ public:
 
         // Check if the order is handled by a manager
         locals.orderFound = false;
-        for (uint64 i = 0; i < state.orders.capacity(); ++i)
+        for (locals.i = 0; locals.i < state.orders.capacity(); ++locals.i)
         {
-            if (state.orders.get(i).orderId == input.orderId)
+            if (state.orders.get(locals.i).orderId == input.orderId)
             {
-                locals.order = state.orders.get(i);
+                locals.order = state.orders.get(locals.i);
                 locals.orderFound = true;
                 break;
             }
@@ -651,6 +652,7 @@ public:
         bit isManagerOperating;
         bit orderFound;
         BridgeOrder order;
+        uint64 i;
     };
 
     PUBLIC_PROCEDURE_WITH_LOCALS(refundOrder)
@@ -675,11 +677,11 @@ public:
         // Retrieve the order
         // Check if the order is handled by a manager
         locals.orderFound = false;
-        for (uint64 i = 0; i < state.orders.capacity(); ++i)
+        for (locals.i = 0; locals.i < state.orders.capacity(); ++locals.i)
         {
-            if (state.orders.get(i).orderId == input.orderId)
+            if (state.orders.get(locals.i).orderId == input.orderId)
             {
-                locals.order = state.orders.get(i);
+                locals.order = state.orders.get(locals.i);
                 locals.orderFound = true;
                 break;
             }
@@ -818,8 +820,8 @@ public:
     // Estructura para la salida de la función getOrderByDetails
     struct getOrderByDetails_output
     {
-        uint8 status;         // Estado de la operación (0 = éxito, otro = error)
         uint64 orderId;       // ID de la orden encontrada
+        uint8 status;         // Estado de la operación (0 = éxito, otro = error)
     };
 
     // Función para buscar una orden por detalles
