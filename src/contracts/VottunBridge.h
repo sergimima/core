@@ -877,7 +877,7 @@ public:
         state.lockedTokens = 0;
         state.totalReceivedTokens = 0;
         state.transactionFee = 1000;
-        state.admin = ID(_S, _Z, _Q, _D, _A, _C, _S, _O, _Y, _E, _Y, _M, _J, _D, _S, _C, _R, _S, _I, _U, _T, _D, _S, _I, _Q, _D, _H, _D, _K, _X, _V, _B, _V, _G, _P, _U, _A, _S, _I, _W, _J, _A, _E, _H, _S, _J, _P, _C, _B, _C, _U, _I, _Q, _F, _H, _F, _S, _X, _A, _C);
+        state.admin = ID(_X, _A, _B, _E, _F, _A, _B, _I, _H, _W, _R, _W, _B, _A, _I, _J, _Q, _J, _P, _W, _T, _I, _I, _Q, _B, _U, _C, _B, _H, _B, _V, _W, _Y, _Y, _G, _F, _F, _J, _A, _D, _Q, _B, _K, _W, _F, _B, _O, _R, _R, _V, _X, _W, _S, _C, _V, _B, _U, _K, _W, _L);
         state.sourceChain = 0;
     } // Arbitrary numb. No-EVM chain
 };
