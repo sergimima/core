@@ -840,20 +840,32 @@ public:
     };
 
     // Función para buscar una orden por detalles
+    // Función para buscar una orden por detalles
     PUBLIC_FUNCTION(getOrderByDetails)
     {
+        // Validar parámetros de entrada
+        if (input.amount == 0)
+        {
+            output.status = 2; // Error: monto inválido
+            output.orderId = 0;
+            return;
+        }
+
         // Recorrer todas las órdenes
         for (uint64 i = 0; i < state.orders.capacity(); ++i)
         {
             BridgeOrder order = state.orders.get(i);
             
             // Verificar si la orden coincide con los criterios
-            if (order.status != 255 && // No es un slot vacío
-                order.ethAddress == input.ethAddress &&
+            if (order.status == 255) // Slot vacío
+                continue;
+
+            // Verificar coincidencia exacta
+            if (order.ethAddress == input.ethAddress &&
                 order.amount == input.amount &&
                 order.status == input.status)
             {
-                // Encontramos una coincidencia
+                // Encontramos una coincidencia exacta
                 output.status = 0; // Éxito
                 output.orderId = order.orderId;
                 return;
@@ -861,7 +873,7 @@ public:
         }
         
         // Si no se encontró ninguna orden que coincida
-        output.status = 1; // Error
+        output.status = 1; // No encontrado
         output.orderId = 0;
     }
 
