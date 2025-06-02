@@ -277,15 +277,17 @@ public:
         locals.newOrder.fromQubicToEthereum = input.fromQubicToEthereum;
 
         // Store the order
+        bool slotFound = false;
         for (locals.i = 0; locals.i < state.orders.capacity(); ++locals.i)
         {
             if (state.orders.get(locals.i).status == 255)
             { // Empty slot
                 state.orders.set(locals.i, locals.newOrder);
+                slotFound = true;
 
                 locals.log = EthBridgeLogger{
                     CONTRACT_INDEX,
-                    0,
+                    0,  // No error
                     locals.newOrder.orderId,
                     input.amount,
                     0};
@@ -293,6 +295,19 @@ public:
                 output.status = 0; // Success
                 return;
             }
+        }
+        
+        // No available slots
+        if (!slotFound) {
+            locals.log = EthBridgeLogger{
+                CONTRACT_INDEX,
+                99, // Código de error personalizado para "sin espacios disponibles"
+                0,  // Sin orderId
+                0,  // Sin monto
+                0};
+            LOG_INFO(locals.log);
+            output.status = 3; // Error: no hay espacios disponibles
+            return;
         }
     }
 
@@ -632,7 +647,7 @@ public:
 
         // Mark the order as completed
         locals.order.status = 1; // Completed
-        state.orders.set(locals.order.orderId, locals.order);
+        state.orders.set(locals.i, locals.order); // Usar el índice del bucle
 
         output.status = 0; // Success
         locals.log = EthBridgeLogger{
@@ -720,7 +735,7 @@ public:
         qpi.transfer(locals.order.qubicSender, locals.order.amount);
         state.lockedTokens -= locals.order.amount;
         locals.order.status = 2; // Refunded
-        state.orders.set(locals.order.orderId, locals.order);
+        state.orders.set(locals.i, locals.order); // Usar el índice del bucle en lugar de orderId
 
         locals.log = EthBridgeLogger{
             CONTRACT_INDEX,
@@ -879,7 +894,7 @@ public:
         state.lockedTokens = 0;
         state.totalReceivedTokens = 0;
         state.transactionFee = 1000;
-        state.admin = qpi.invocator(); // ID(_P, _H, _O, _Y, _R, _V, _A, _K, _J, _X, _M, _L, _R, _B, _B, _I, _R, _I, _P, _D, _I, _B, _M, _H, _D, _H, _U, _A, _Z, _B, _Q, _K, _N, _B, _J, _T, _R, _D, _S, _P, _G, _C, _L, _Z, _C, _Q, _W, _A, _K, _C, _F, _Q, _J, _K, _K, _E);
+        state.admin = qpi.invocator(); // El administrador es quien despliega el contrato
         state.sourceChain = 0;
     } // Arbitrary numb. No-EVM chain
 };
