@@ -168,8 +168,7 @@ public:
 
     struct getTotalLockedTokens_locals
     {
-        EthBridgeLogger log;
-        TokensLogger logTokens;
+        EthBridgeLogger log; // logTokens eliminado ya que no se usa
     };
 
     struct getTotalLockedTokens_input
@@ -237,6 +236,7 @@ public:
         BridgeOrder newOrder;
         EthBridgeLogger log;
         uint64 i;
+        bit slotFound; // Añadido slotFound
     };
 
     PUBLIC_PROCEDURE_WITH_LOCALS(createOrder)
@@ -298,7 +298,7 @@ public:
         }
         
         // No available slots
-        if (!slotFound) {
+        if (!locals.slotFound) { // Corregido a locals.slotFound
             locals.log = EthBridgeLogger{
                 CONTRACT_INDEX,
                 99, // Código de error personalizado para "sin espacios disponibles"
@@ -803,8 +803,10 @@ public:
         output.status = 0; // Success
     }
 
-    PUBLIC_FUNCTION(getAdminID)
+    struct getAdminID_locals { /* Vacío, solo para consistencia */ };
+    PUBLIC_FUNCTION_WITH_LOCALS(getAdminID)
     {
+        getAdminID_locals locals; // Declaración de locals
         output.adminId = state.admin;
     }
 
@@ -913,12 +915,12 @@ public:
 
     INITIALIZE()
     {
-        initialize_locals locals;
+        initialize_locals init_data;
         // Inicializar el arreglo de órdenes con status = 255 (slot vacío)
-        for (locals.i = 0; locals.i < state.orders.capacity(); ++locals.i)
+        for (init_data.i = 0; init_data.i < state.orders.capacity(); ++init_data.i)
         {
-            locals.emptyOrder.status = 255; // Marcar como slot vacío
-            state.orders.set(locals.i, locals.emptyOrder);
+            init_data.emptyOrder.status = 255; // Marcar como slot vacío
+            state.orders.set(init_data.i, init_data.emptyOrder);
         }
         
         // Inicializar el resto de las variables de estado
