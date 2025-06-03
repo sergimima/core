@@ -902,11 +902,20 @@ public:
     // Initialize the contract
     INITIALIZE()
     {
-        state.nextOrderId = 0;
+        // Inicializar el arreglo de órdenes con status = 255 (slot vacío)
+        for (uint64 i = 0; i < state.orders.capacity(); ++i)
+        {
+            BridgeOrder emptyOrder;
+            emptyOrder.status = 255; // Marcar como slot vacío
+            state.orders.set(i, emptyOrder);
+        }
+        
+        // Inicializar el resto de las variables de estado
+        state.nextOrderId = 1; // Empezar desde 1 para evitar ID 0
         state.lockedTokens = 0;
         state.totalReceivedTokens = 0;
         state.transactionFee = 1000;
         state.admin = qpi.invocator(); // El administrador es quien despliega el contrato
-        state.sourceChain = 0;
-    } // Arbitrary numb. No-EVM chain
+        state.sourceChain = 0; // Arbitrary numb. No-EVM chain
+    }
 };
