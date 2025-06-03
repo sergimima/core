@@ -806,7 +806,6 @@ public:
     struct getAdminID_locals { /* Vacío, solo para consistencia */ };
     PUBLIC_FUNCTION_WITH_LOCALS(getAdminID)
     {
-        getAdminID_locals locals; // Declaración de locals
         output.adminId = state.admin;
     }
 
@@ -850,7 +849,6 @@ public:
 
     PUBLIC_FUNCTION_WITH_LOCALS(getOrderByDetails)
     {
-        getOrderByDetails_locals locals;
         // Validar parámetros de entrada
         if (input.amount == 0)
         {
