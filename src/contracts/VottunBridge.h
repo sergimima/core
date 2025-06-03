@@ -277,13 +277,13 @@ public:
         locals.newOrder.fromQubicToEthereum = input.fromQubicToEthereum;
 
         // Store the order
-        bool slotFound = false;
+        locals.slotFound = false;
         for (locals.i = 0; locals.i < state.orders.capacity(); ++locals.i)
         {
             if (state.orders.get(locals.i).status == 255)
             { // Empty slot
                 state.orders.set(locals.i, locals.newOrder);
-                slotFound = true;
+                locals.slotFound = true;
 
                 locals.log = EthBridgeLogger{
                     CONTRACT_INDEX,
@@ -841,8 +841,14 @@ public:
 
     // Función para buscar una orden por detalles
     // Función para buscar una orden por detalles
-    PUBLIC_FUNCTION(getOrderByDetails)
+    struct getOrderByDetails_locals {
+        uint64 i;
+        BridgeOrder order;
+    };
+
+    PUBLIC_FUNCTION_WITH_LOCALS(getOrderByDetails)
     {
+        getOrderByDetails_locals locals;
         // Validar parámetros de entrada
         if (input.amount == 0)
         {
@@ -852,22 +858,22 @@ public:
         }
 
         // Recorrer todas las órdenes
-        for (uint64 i = 0; i < state.orders.capacity(); ++i)
+        for (locals.i = 0; locals.i < state.orders.capacity(); ++locals.i)
         {
-            BridgeOrder order = state.orders.get(i);
+            locals.order = state.orders.get(locals.i);
             
             // Verificar si la orden coincide con los criterios
-            if (order.status == 255) // Slot vacío
+            if (locals.order.status == 255) // Slot vacío
                 continue;
 
             // Verificar coincidencia exacta
-            if (order.ethAddress == input.ethAddress &&
-                order.amount == input.amount &&
-                order.status == input.status)
+            if (locals.order.ethAddress == input.ethAddress &&
+                locals.order.amount == input.amount &&
+                locals.order.status == input.status)
             {
                 // Encontramos una coincidencia exacta
                 output.status = 0; // Éxito
-                output.orderId = order.orderId;
+                output.orderId = locals.order.orderId;
                 return;
             }
         }
@@ -900,14 +906,19 @@ public:
     }
 
     // Initialize the contract
+    struct initialize_locals {
+        uint64 i;
+        BridgeOrder emptyOrder;
+    };
+
     INITIALIZE()
     {
+        initialize_locals locals;
         // Inicializar el arreglo de órdenes con status = 255 (slot vacío)
-        for (uint64 i = 0; i < state.orders.capacity(); ++i)
+        for (locals.i = 0; locals.i < state.orders.capacity(); ++locals.i)
         {
-            BridgeOrder emptyOrder;
-            emptyOrder.status = 255; // Marcar como slot vacío
-            state.orders.set(i, emptyOrder);
+            locals.emptyOrder.status = 255; // Marcar como slot vacío
+            state.orders.set(locals.i, locals.emptyOrder);
         }
         
         // Inicializar el resto de las variables de estado
