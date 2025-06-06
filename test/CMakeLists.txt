@@ -30,6 +30,7 @@ add_executable(
   # assets.cpp
   # common_def.cpp
   # contract_core.cpp
+  contract_vottunbridge.cpp
   # contract_qearn.cpp
   # contract_qvault.cpp
   # contract_qx.cpp
