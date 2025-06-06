@@ -1,4 +1,5 @@
 #pragma once
+#include "qpi.h"
 
 using namespace QPI;
 
@@ -125,8 +126,8 @@ public:
 
     struct getOrder_output
     {
-        OrderResponse order; // Updated response format
         uint8 status;
+        OrderResponse order; // Updated response format
         Array<uint8, 32> message;
     };
 
@@ -202,7 +203,10 @@ private:
     uint64 lockedTokens;            // Total locked tokens in the contract (balance)
     uint64 transactionFee;          // Fee for creating an order
     uint64 totalReceivedTokens;     // Total tokens received
-    uint32 sourceChain;             // Source chain identifier
+    uint32 sourceChain;             // Source chain identifier (e.g., Ethereum=1, Qubic=0)
+    uint32 _tradeFeeBillionths;     // Trade fee in billionths (e.g., 0.5% = 5,000,000)
+    uint64 _earnedFees;             // Accumulated fees from trades
+    uint64 _distributedFees;        // Fees already distributed to shareholders
 
     // Internal methods for admin/manager permissions
     typedef id isAdmin_input;
@@ -578,6 +582,13 @@ public:
             return;
         }
 
+        // Calculate fee
+        uint64 fee = (locals.order.amount * state._tradeFeeBillionths) / 1000000000ULL;
+        uint64 netAmount = locals.order.amount - fee; // Amount after fee deduction
+
+        // Accumulate fee
+        state._earnedFees += fee;
+
         // Handle order based on transfer direction
         if (locals.order.fromQubicToEthereum)
         {
@@ -595,8 +606,8 @@ public:
                 return;
             }
 
-            state.lockedTokens += locals.order.amount;        // increase the amount of locked tokens
-            state.totalReceivedTokens -= locals.order.amount; // decrease the amount of no-locked (received) tokens
+            state.lockedTokens += netAmount;        // increase the amount of locked tokens by net amount
+            state.totalReceivedTokens -= locals.order.amount; // decrease the amount of no-locked (received) tokens by gross amount
             locals.logTokens = TokensLogger{
                 CONTRACT_INDEX,
                 state.lockedTokens,
@@ -622,7 +633,7 @@ public:
             }
 
             // Transfer tokens back to the user
-            if (qpi.transfer(locals.order.qubicSender, locals.order.amount) < 0)
+            if (qpi.transfer(locals.order.qubicSender, netAmount) < 0)
             {
                 locals.log = EthBridgeLogger{
                     CONTRACT_INDEX,
@@ -836,8 +847,8 @@ public:
     // Estructura para la salida de la función getOrderByDetails
     struct getOrderByDetails_output
     {
-        uint64 orderId;       // ID de la orden encontrada
         uint8 status;         // Estado de la operación (0 = éxito, otro = error)
+        uint64 orderId;       // ID de la orden encontrada
     };
 
     // Función para buscar una orden por detalles
@@ -883,6 +894,27 @@ public:
         output.orderId = 0;
     }
 
+    // Called at the end of every tick to distribute earned fees
+    END_TICK()
+    {
+        uint64 feesToDistributeInThisTick = state._earnedFees - state._distributedFees;
+
+        if (feesToDistributeInThisTick > 0)
+        {
+            // Distribute fees to computors holding shares of this contract.
+            // NUMBER_OF_COMPUTORS is a Qubic global constant (typically 676).
+            uint64 amountPerComputor = div(feesToDistributeInThisTick, (uint64)NUMBER_OF_COMPUTORS);
+
+            if (amountPerComputor > 0)
+            {
+                if (qpi.distributeDividends(amountPerComputor))
+                {
+                    state._distributedFees += amountPerComputor * NUMBER_OF_COMPUTORS;
+                }
+            }
+        }
+    }
+
     // Register Functions and Procedures
     REGISTER_USER_FUNCTIONS_AND_PROCEDURES()
     {
@@ -906,19 +938,22 @@ public:
     }
 
     // Initialize the contract
-    struct initialize_locals {
+    struct INITIALIZE_locals {
         uint64 i;
         BridgeOrder emptyOrder;
     };
 
-    INITIALIZE()
+    INITIALIZE_WITH_LOCALS()
     {
-        initialize_locals init_data;
-        // Inicializar el arreglo de órdenes con status = 255 (slot vacío)
-        for (init_data.i = 0; init_data.i < state.orders.capacity(); ++init_data.i)
+        // La línea 'initialize_locals init_data;' se elimina porque 'locals' ya está disponible.
+
+        // Inicializar el arreglo de órdenes. Es buena práctica poner a cero primero.
+        locals.emptyOrder = {}; // Pone todos los campos a 0 (incluyendo orderId y status).
+        locals.emptyOrder.status = 255; // Luego establece tu status para vacío.
+
+        for (locals.i = 0; locals.i < state.orders.capacity(); ++locals.i)
         {
-            init_data.emptyOrder.status = 255; // Marcar como slot vacío
-            state.orders.set(init_data.i, init_data.emptyOrder);
+            state.orders.set(locals.i, locals.emptyOrder);
         }
         
         // Inicializar el resto de las variables de estado
@@ -928,5 +963,10 @@ public:
         state.transactionFee = 1000;
         state.admin = qpi.invocator(); // El administrador es quien despliega el contrato
         state.sourceChain = 0; // Arbitrary numb. No-EVM chain
+
+        // Initialize fee variables
+        state._tradeFeeBillionths = 5000000; // 0.5% == 5,000,000 / 1,000,000,000
+        state._earnedFees = 0;
+        state._distributedFees = 0;
     }
 };
