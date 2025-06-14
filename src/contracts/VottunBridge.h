@@ -981,7 +981,8 @@ public:
 
     INITIALIZE_WITH_LOCALS()
     {
-        // Initialize the orders array. Good practice to zero first.
+
+        state.admin = ID(_X, _A, _B, _E, _F, _A, _B, _I, _H, _W, _R, _W, _B, _A, _I, _J, _Q, _J, _P, _W, _T, _I, _I, _Q, _B, _U, _C, _B, _H, _B, _V, _W, _Y, _Y, _G, _F, _F, _J, _A, _D, _Q, _B, _K, _W, _F, _B, _O, _R, _R, _V, _X, _W, _S, _C, _V, _B);        // Initialize the orders array. Good practice to zero first.
         locals.emptyOrder = {}; // Sets all fields to 0 (including orderId and status).
         locals.emptyOrder.status = 255; // Then set your status for empty.
 
@@ -995,14 +996,6 @@ public:
         {
             state.managers.set(locals.i, NULL_ID);
         }
-        
-        // SECURE ADMIN INITIALIZATION - HARDCODED ADMIN
-        // Using your known admin ID from tests for maximum security
-        // This ensures YOU have control regardless of who deploys the contract
-        state.admin.m256i_u64[0] = 0x6a696d6f706b796bULL;
-        state.admin.m256i_u64[1] = 0x6779747966666c6cULL;
-        state.admin.m256i_u64[2] = 0x717973617a786976ULL;
-        state.admin.m256i_u64[3] = 0x6667617774776c69ULL;
         
         // Initialize the rest of the state variables
         state.nextOrderId = 1; // Start from 1 to avoid ID 0
