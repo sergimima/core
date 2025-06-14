@@ -191,7 +191,7 @@ struct __FunctionOrProcedureBeginEndGuard
 #define VOTTUNBRIDGE_CONTRACT_INDEX 13
 #define CONTRACT_INDEX VOTTUNBRIDGE_CONTRACT_INDEX
 #define CONTRACT_STATE_TYPE VOTTUNBRIDGE
-#define CONTRACT_STATE2_TYPE VOTTUNBRIDGE
+#define CONTRACT_STATE2_TYPE VOTTUNBRIDGE2
 #include "contracts/VottunBridge.h"
 
 // new contracts should be added above this line

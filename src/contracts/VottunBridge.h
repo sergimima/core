@@ -4,12 +4,10 @@
 using namespace QPI;
 
 struct VOTTUNBRIDGE2 {
-
 };
 
 struct VOTTUNBRIDGE : public ContractBase
 {
-
 public:
     // Bridge Order Structure
     struct BridgeOrder
@@ -106,8 +104,6 @@ public:
         uint8 status;
     };
 
-    
-
     // Order Response Structure
     struct OrderResponse
     {
@@ -141,6 +137,23 @@ public:
         id adminId;
     };
 
+    struct getContractInfo_input
+    {
+        // Sin parámetros
+    };
+
+    struct getContractInfo_output
+    {
+        id admin;
+        Array<id, 16> managers;
+        uint64 nextOrderId;
+        uint64 lockedTokens;
+        uint64 totalReceivedTokens;
+        uint64 earnedFees;
+        uint32 tradeFeeBillionths;
+        uint32 sourceChain;
+    };
+
     // Logger structures
     struct EthBridgeLogger
     {
@@ -169,7 +182,7 @@ public:
 
     struct getTotalLockedTokens_locals
     {
-        EthBridgeLogger log; // logTokens eliminado ya que no se usa
+        EthBridgeLogger log;
     };
 
     struct getTotalLockedTokens_input
@@ -181,6 +194,7 @@ public:
     {
         uint64 totalLockedTokens;
     };
+
     // Enum for error codes
     enum EthBridgeError
     {
@@ -190,23 +204,23 @@ public:
         orderNotFound = 4,
         invalidOrderState = 5,
         insufficientLockedTokens = 6,
-        transferFailed = 7
+        transferFailed = 7,
+        maxManagersReached = 8,
+        notAuthorized = 9
     };
 
-private:
-
+public:
     // Contract State
-    Array<BridgeOrder, 256> orders; // Storage for orders (fixed size)
-    id admin;                       // Admin address
-    Array<id, 16> managers;         // Managers list
-    uint64 nextOrderId;             // Counter for order IDs
-    uint64 lockedTokens;            // Total locked tokens in the contract (balance)
-    uint64 transactionFee;          // Fee for creating an order
-    uint64 totalReceivedTokens;     // Total tokens received
-    uint32 sourceChain;             // Source chain identifier (e.g., Ethereum=1, Qubic=0)
-    uint32 _tradeFeeBillionths;     // Trade fee in billionths (e.g., 0.5% = 5,000,000)
-    uint64 _earnedFees;             // Accumulated fees from trades
-    uint64 _distributedFees;        // Fees already distributed to shareholders
+    Array<BridgeOrder, 1024> orders; // Increased from 256 to 1024
+    id admin;                         // Primary admin address
+    Array<id, 16> managers;           // Managers list
+    uint64 nextOrderId;               // Counter for order IDs
+    uint64 lockedTokens;              // Total locked tokens in the contract (balance)
+    uint64 totalReceivedTokens;       // Total tokens received
+    uint32 sourceChain;               // Source chain identifier (e.g., Ethereum=1, Qubic=0)
+    uint32 _tradeFeeBillionths;       // Trade fee in billionths (e.g., 0.5% = 5,000,000)
+    uint64 _earnedFees;               // Accumulated fees from trades
+    uint64 _distributedFees;          // Fees already distributed to shareholders
 
     // Internal methods for admin/manager permissions
     typedef id isAdmin_input;
@@ -240,11 +254,12 @@ public:
         BridgeOrder newOrder;
         EthBridgeLogger log;
         uint64 i;
-        bit slotFound; // Añadido slotFound
+        bit slotFound;
     };
 
     PUBLIC_PROCEDURE_WITH_LOCALS(createOrder)
-    { // Validate the input
+    {
+        // Validate the input
         if (input.amount == 0)
         {
             locals.log = EthBridgeLogger{
@@ -258,7 +273,11 @@ public:
             return;
         }
 
-        if (qpi.invocationReward() < state.transactionFee)
+        // Calculate fee as percentage of amount (0.5%)
+        uint64 requiredFee = (input.amount * state._tradeFeeBillionths) / 1000000000ULL;
+        
+        // Verify that the fee paid is sufficient
+        if (qpi.invocationReward() < static_cast<sint64>(requiredFee))
         {
             locals.log = EthBridgeLogger{
                 CONTRACT_INDEX,
@@ -270,6 +289,9 @@ public:
             output.status = 2; // Error
             return;
         }
+        
+        // Accumulate the collected fee
+        state._earnedFees += requiredFee;
 
         // Create the order
         locals.newOrder.orderId = state.nextOrderId++;
@@ -302,15 +324,15 @@ public:
         }
         
         // No available slots
-        if (!locals.slotFound) { // Corregido a locals.slotFound
+        if (!locals.slotFound) {
             locals.log = EthBridgeLogger{
                 CONTRACT_INDEX,
-                99, // Código de error personalizado para "sin espacios disponibles"
-                0,  // Sin orderId
-                0,  // Sin monto
+                99, // Custom error code for "no available slots"
+                0,  // No orderId
+                0,  // No amount
                 0};
             LOG_INFO(locals.log);
-            output.status = 3; // Error: no hay espacios disponibles
+            output.status = 3; // Error: no available slots
             return;
         }
     }
@@ -376,23 +398,23 @@ public:
         {
             locals.log = EthBridgeLogger{
                 CONTRACT_INDEX,
-                EthBridgeError::onlyManagersCanCompleteOrders,
+                EthBridgeError::notAuthorized,
                 0, // No order ID involved
                 0, // No amount involved
                 0};
             LOG_INFO(locals.log);
-            output.status = 1; // Error
+            output.status = EthBridgeError::notAuthorized; // Error
             return;
         }
 
         state.admin = input.address;
+        
         // Logging the admin address has changed
         locals.adminLog = AddressChangeLogger{
             input.address,
             CONTRACT_INDEX,
             1, // Event code "Admin Changed"
             0};
-
         LOG_INFO(locals.adminLog);
 
         locals.log = EthBridgeLogger{
@@ -414,26 +436,25 @@ public:
 
     PUBLIC_PROCEDURE_WITH_LOCALS(addManager)
     {
-
         if (qpi.invocator() != state.admin)
         {
             locals.log = EthBridgeLogger{
                 CONTRACT_INDEX,
-                EthBridgeError::onlyManagersCanCompleteOrders,
+                EthBridgeError::notAuthorized,
                 0, // No order ID involved
                 0, // No amount involved
                 0};
-            LOG_INFO(locals.log)
-            output.status = 1; // Error
+            LOG_INFO(locals.log);
+            output.status = EthBridgeError::notAuthorized;
             return;
         }
 
         for (locals.i = 0; locals.i < state.managers.capacity(); ++locals.i)
         {
             if (state.managers.get(locals.i) == NULL_ID)
-            { // Slot vacío
+            {
                 state.managers.set(locals.i, input.address);
-
+                
                 locals.managerLog = AddressChangeLogger{
                     input.address,
                     CONTRACT_INDEX,
@@ -445,14 +466,16 @@ public:
             }
         }
 
+        // No empty slot found
         locals.log = EthBridgeLogger{
             CONTRACT_INDEX,
-            0, // No error
-            0, // No order ID involved
-            0, // No amount involved
+            EthBridgeError::maxManagersReached,
+            0,  // No orderId
+            0,  // No amount
             0};
         LOG_INFO(locals.log);
-        output.status = 0; // Success
+        output.status = EthBridgeError::maxManagersReached;
+        return;
     }
 
     struct removeManager_locals
@@ -468,13 +491,12 @@ public:
         {
             locals.log = EthBridgeLogger{
                 CONTRACT_INDEX,
-                EthBridgeError::onlyManagersCanCompleteOrders,
+                EthBridgeError::notAuthorized,
                 0, // No order ID involved
                 0, // No amount involved
                 0};
             LOG_INFO(locals.log);
-
-            output.status = 1; // Error
+            output.status = EthBridgeError::notAuthorized; // Error
             return;
         }
 
@@ -521,7 +543,6 @@ public:
         LOG_INFO(locals.log);
         output.totalTokens = state.totalReceivedTokens;
     }
-    
 
     struct completeOrder_locals
     {
@@ -540,8 +561,22 @@ public:
         locals.invocatorAddress = qpi.invocator();
         locals.isManagerOperating = false;
         CALL(isManager, locals.invocatorAddress, locals.isManagerOperating);
+        
+        // Verify that the invocator is a manager
+        if (!locals.isManagerOperating)
+        {
+            locals.log = EthBridgeLogger{
+                CONTRACT_INDEX,
+                EthBridgeError::onlyManagersCanCompleteOrders,
+                input.orderId,
+                0,
+                0};
+            LOG_INFO(locals.log);
+            output.status = EthBridgeError::onlyManagersCanCompleteOrders; // Error: not a manager
+            return;
+        }
 
-        // Check if the order is handled by a manager
+        // Check if the order exists
         locals.orderFound = false;
         for (locals.i = 0; locals.i < state.orders.capacity(); ++locals.i)
         {
@@ -553,7 +588,7 @@ public:
             }
         }
 
-        // Order nor found
+        // Order not found
         if (!locals.orderFound)
         {
             locals.log = EthBridgeLogger{
@@ -563,12 +598,11 @@ public:
                 0,
                 0};
             LOG_INFO(locals.log);
-            output.status = 2; // Error
+            output.status = EthBridgeError::orderNotFound; // Error
             return;
         }
 
         // Check order status
-        // All orders status are 0 when created
         if (locals.order.status != 0)
         { // Check it is not completed or refunded already
             locals.log = EthBridgeLogger{
@@ -578,16 +612,12 @@ public:
                 0,
                 0};
             LOG_INFO(locals.log);
-            output.status = 3; // Error
+            output.status = EthBridgeError::invalidOrderState; // Error
             return;
         }
 
-        // Calculate fee
-        uint64 fee = (locals.order.amount * state._tradeFeeBillionths) / 1000000000ULL;
-        uint64 netAmount = locals.order.amount - fee; // Amount after fee deduction
-
-        // Accumulate fee
-        state._earnedFees += fee;
+        // Use full amount without deducting commission (commission was already charged in createOrder)
+        uint64 netAmount = locals.order.amount;
 
         // Handle order based on transfer direction
         if (locals.order.fromQubicToEthereum)
@@ -602,7 +632,7 @@ public:
                     locals.order.amount,
                     0};
                 LOG_INFO(locals.log);
-                output.status = 4; // Error
+                output.status = EthBridgeError::insufficientLockedTokens; // Error
                 return;
             }
 
@@ -613,7 +643,6 @@ public:
                 state.lockedTokens,
                 state.totalReceivedTokens,
                 0};
-
             LOG_INFO(locals.logTokens);
         }
         else
@@ -628,7 +657,7 @@ public:
                     locals.order.amount,
                     0};
                 LOG_INFO(locals.log);
-                output.status = 5; // Error
+                output.status = EthBridgeError::insufficientLockedTokens; // Error
                 return;
             }
 
@@ -642,7 +671,7 @@ public:
                     locals.order.amount,
                     0};
                 LOG_INFO(locals.log);
-                output.status = 6; // Error
+                output.status = EthBridgeError::transferFailed; // Error
                 return;
             }
 
@@ -652,13 +681,12 @@ public:
                 state.lockedTokens,
                 state.totalReceivedTokens,
                 0};
-
             LOG_INFO(locals.logTokens);
         }
 
         // Mark the order as completed
         locals.order.status = 1; // Completed
-        state.orders.set(locals.i, locals.order); // Usar el índice del bucle
+        state.orders.set(locals.i, locals.order); // Use the loop index
 
         output.status = 0; // Success
         locals.log = EthBridgeLogger{
@@ -686,22 +714,22 @@ public:
         locals.invocatorAddress = qpi.invocator();
         locals.isManagerOperating = false;
         CALL(isManager, locals.invocatorAddress, locals.isManagerOperating);
+        
         // Check if the order is handled by a manager
         if (!locals.isManagerOperating)
         {
             locals.log = EthBridgeLogger{
                 CONTRACT_INDEX,
-                EthBridgeError::orderNotFound,
+                EthBridgeError::onlyManagersCanCompleteOrders,
                 input.orderId,
                 0, // No amount involved
                 0};
             LOG_INFO(locals.log);
-            output.status = 1; // Error
+            output.status = EthBridgeError::onlyManagersCanCompleteOrders; // Error
             return;
         }
 
         // Retrieve the order
-        // Check if the order is handled by a manager
         locals.orderFound = false;
         for (locals.i = 0; locals.i < state.orders.capacity(); ++locals.i)
         {
@@ -713,7 +741,7 @@ public:
             }
         }
 
-        // Order nor found
+        // Order not found
         if (!locals.orderFound)
         {
             locals.log = EthBridgeLogger{
@@ -723,12 +751,11 @@ public:
                 0,
                 0};
             LOG_INFO(locals.log);
-            output.status = 2; // Error
+            output.status = EthBridgeError::orderNotFound; // Error
             return;
         }
 
         // Check order status
-        // All orders status are 0 when created
         if (locals.order.status != 0)
         { // Check it is not completed or refunded already
             locals.log = EthBridgeLogger{
@@ -738,7 +765,7 @@ public:
                 0,
                 0};
             LOG_INFO(locals.log);
-            output.status = 3; // Error
+            output.status = EthBridgeError::invalidOrderState; // Error
             return;
         }
 
@@ -746,7 +773,7 @@ public:
         qpi.transfer(locals.order.qubicSender, locals.order.amount);
         state.lockedTokens -= locals.order.amount;
         locals.order.status = 2; // Refunded
-        state.orders.set(locals.i, locals.order); // Usar el índice del bucle en lugar de orderId
+        state.orders.set(locals.i, locals.order); // Use the loop index instead of orderId
 
         locals.log = EthBridgeLogger{
             CONTRACT_INDEX,
@@ -767,7 +794,6 @@ public:
 
     PUBLIC_PROCEDURE_WITH_LOCALS(transferToContract)
     {
-
         if (input.amount == 0)
         {
             locals.log = EthBridgeLogger{
@@ -777,13 +803,13 @@ public:
                 input.amount,
                 0};
             LOG_INFO(locals.log);
-            output.status = 1; // Error
+            output.status = EthBridgeError::invalidAmount; // Error
             return;
         }
 
         if (qpi.transfer(SELF, input.amount) < 0)
         {
-            output.status = 2; // Error
+            output.status = EthBridgeError::transferFailed; // Error
             locals.log = EthBridgeLogger{
                 CONTRACT_INDEX,
                 EthBridgeError::transferFailed,
@@ -801,7 +827,6 @@ public:
             state.lockedTokens,
             state.totalReceivedTokens,
             0};
-
         LOG_INFO(locals.logTokens);
 
         locals.log = EthBridgeLogger{
@@ -814,7 +839,7 @@ public:
         output.status = 0; // Success
     }
 
-    struct getAdminID_locals { /* Vacío, solo para consistencia */ };
+    struct getAdminID_locals { /* Empty, for consistency */ };
     PUBLIC_FUNCTION_WITH_LOCALS(getAdminID)
     {
         output.adminId = state.admin;
@@ -822,7 +847,7 @@ public:
 
     PUBLIC_FUNCTION_WITH_LOCALS(getTotalLockedTokens)
     {
-        // Registrar el log para depuración
+        // Log for debugging
         locals.log = EthBridgeLogger{
             CONTRACT_INDEX,
             0, // No error
@@ -832,27 +857,26 @@ public:
         };
         LOG_INFO(locals.log);
 
-        // Asignar el valor de lockedTokens a la salida
+        // Assign the value of lockedTokens to the output
         output.totalLockedTokens = state.lockedTokens;
     }
 
-    // Estructura para la entrada de la función getOrderByDetails
+    // Structure for the input of the getOrderByDetails function
     struct getOrderByDetails_input
     {
-        id ethAddress;        // Dirección Ethereum
-        uint64 amount;        // Monto de la transacción
-        uint8 status;         // Estado de la orden (0 = creada, 1 = completada, 2 = reembolsada)
+        id ethAddress;        // Ethereum address
+        uint64 amount;        // Transaction amount
+        uint8 status;         // Order status (0 = created, 1 = completed, 2 = refunded)
     };
 
-    // Estructura para la salida de la función getOrderByDetails
+    // Structure for the output of the getOrderByDetails function
     struct getOrderByDetails_output
     {
-        uint8 status;         // Estado de la operación (0 = éxito, otro = error)
-        uint64 orderId;       // ID de la orden encontrada
+        uint8 status;         // Operation status (0 = success, other = error)
+        uint64 orderId;       // ID of the found order
     };
 
-    // Función para buscar una orden por detalles
-    // Función para buscar una orden por detalles
+    // Function to search for an order by details
     struct getOrderByDetails_locals {
         uint64 i;
         BridgeOrder order;
@@ -860,38 +884,51 @@ public:
 
     PUBLIC_FUNCTION_WITH_LOCALS(getOrderByDetails)
     {
-        // Validar parámetros de entrada
+        // Validate input parameters
         if (input.amount == 0)
         {
-            output.status = 2; // Error: monto inválido
+            output.status = 2; // Error: invalid amount
             output.orderId = 0;
             return;
         }
 
-        // Recorrer todas las órdenes
+        // Iterate through all orders
         for (locals.i = 0; locals.i < state.orders.capacity(); ++locals.i)
         {
             locals.order = state.orders.get(locals.i);
             
-            // Verificar si la orden coincide con los criterios
-            if (locals.order.status == 255) // Slot vacío
+            // Check if the order matches the criteria
+            if (locals.order.status == 255) // Empty slot
                 continue;
 
-            // Verificar coincidencia exacta
+            // Verify exact match
             if (locals.order.ethAddress == input.ethAddress &&
                 locals.order.amount == input.amount &&
                 locals.order.status == input.status)
             {
-                // Encontramos una coincidencia exacta
-                output.status = 0; // Éxito
+                // Found an exact match
+                output.status = 0; // Success
                 output.orderId = locals.order.orderId;
                 return;
             }
         }
         
-        // Si no se encontró ninguna orden que coincida
-        output.status = 1; // No encontrado
+        // If no matching order was found
+        output.status = 1; // Not found
         output.orderId = 0;
+    }
+
+    // NEW: Enhanced contract info function
+    PUBLIC_FUNCTION(getContractInfo)
+    {
+        output.admin = state.admin;
+        output.managers = state.managers;
+        output.nextOrderId = state.nextOrderId;
+        output.lockedTokens = state.lockedTokens;
+        output.totalReceivedTokens = state.totalReceivedTokens;
+        output.earnedFees = state._earnedFees;
+        output.tradeFeeBillionths = state._tradeFeeBillionths;
+        output.sourceChain = state.sourceChain;
     }
 
     // Called at the end of every tick to distribute earned fees
@@ -925,6 +962,7 @@ public:
         REGISTER_USER_FUNCTION(getAdminID, 5);
         REGISTER_USER_FUNCTION(getTotalLockedTokens, 6);
         REGISTER_USER_FUNCTION(getOrderByDetails, 7);
+        REGISTER_USER_FUNCTION(getContractInfo, 8); // NEW: Enhanced info function
 
         REGISTER_USER_PROCEDURE(createOrder, 1);
         REGISTER_USER_PROCEDURE(setAdmin, 2);
@@ -933,11 +971,9 @@ public:
         REGISTER_USER_PROCEDURE(completeOrder, 5);
         REGISTER_USER_PROCEDURE(refundOrder, 6);
         REGISTER_USER_PROCEDURE(transferToContract, 7);
-
-        
     }
 
-    // Initialize the contract
+    // Initialize the contract with SECURE ADMIN CONFIGURATION
     struct INITIALIZE_locals {
         uint64 i;
         BridgeOrder emptyOrder;
@@ -945,24 +981,34 @@ public:
 
     INITIALIZE_WITH_LOCALS()
     {
-        // La línea 'initialize_locals init_data;' se elimina porque 'locals' ya está disponible.
-
-        // Inicializar el arreglo de órdenes. Es buena práctica poner a cero primero.
-        locals.emptyOrder = {}; // Pone todos los campos a 0 (incluyendo orderId y status).
-        locals.emptyOrder.status = 255; // Luego establece tu status para vacío.
+        // Initialize the orders array. Good practice to zero first.
+        locals.emptyOrder = {}; // Sets all fields to 0 (including orderId and status).
+        locals.emptyOrder.status = 255; // Then set your status for empty.
 
         for (locals.i = 0; locals.i < state.orders.capacity(); ++locals.i)
         {
             state.orders.set(locals.i, locals.emptyOrder);
         }
+
+        // Initialize the managers array with NULL_ID to mark slots as empty
+        for (locals.i = 0; locals.i < state.managers.capacity(); ++locals.i)
+        {
+            state.managers.set(locals.i, NULL_ID);
+        }
         
-        // Inicializar el resto de las variables de estado
-        state.nextOrderId = 1; // Empezar desde 1 para evitar ID 0
+        // SECURE ADMIN INITIALIZATION - HARDCODED ADMIN
+        // Using your known admin ID from tests for maximum security
+        // This ensures YOU have control regardless of who deploys the contract
+        state.admin.m256i_u64[0] = 0x6a696d6f706b796bULL;
+        state.admin.m256i_u64[1] = 0x6779747966666c6cULL;
+        state.admin.m256i_u64[2] = 0x717973617a786976ULL;
+        state.admin.m256i_u64[3] = 0x6667617774776c69ULL;
+        
+        // Initialize the rest of the state variables
+        state.nextOrderId = 1; // Start from 1 to avoid ID 0
         state.lockedTokens = 0;
         state.totalReceivedTokens = 0;
-        state.transactionFee = 1000;
-        state.admin = qpi.invocator(); // El administrador es quien despliega el contrato
-        state.sourceChain = 0; // Arbitrary numb. No-EVM chain
+        state.sourceChain = 0; // Arbitrary number. No-EVM chain
 
         // Initialize fee variables
         state._tradeFeeBillionths = 5000000; // 0.5% == 5,000,000 / 1,000,000,000
