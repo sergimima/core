@@ -14,7 +14,7 @@ public:
     struct BridgeOrder
     {
         id qubicSender;              // Sender address on Qubic
-        Array<uint8, 42> ethAddress; // Destination Ethereum address
+        Array<uint8, 64> ethAddress; // Destination Ethereum address
         uint64 orderId;              // Unique ID for the order
         uint64 amount;               // Amount to transfer
         uint8 orderType;             // Type of order (e.g., mint, transfer)
@@ -25,7 +25,7 @@ public:
     // Input and Output Structs
     struct createOrder_input
     {
-        Array<uint8, 42> ethAddress;
+        Array<uint8, 64> ethAddress;
         uint64 amount;
         bit fromQubicToEthereum;
     };
@@ -133,7 +133,7 @@ public:
     struct OrderResponse
     {
         id originAccount;                    // Origin account
-        Array<uint8, 42> destinationAccount; // Destination account
+        Array<uint8, 64> destinationAccount; // Destination account
         uint64 orderId;                      // Order ID as uint64
         uint64 amount;                       // Amount as uint64
         Array<uint8, 64> memo;               // Notes or metadata
@@ -978,7 +978,7 @@ public:
     // Structure for the input of the getOrderByDetails function
     struct getOrderByDetails_input
     {
-        Array<uint8, 42> ethAddress; // Ethereum address
+        Array<uint8, 64> ethAddress; // Ethereum address
         uint64 amount;               // Transaction amount
         uint8 status;                // Order status (0 = created, 1 = completed, 2 = refunded)
     };
