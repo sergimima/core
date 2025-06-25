@@ -177,6 +177,10 @@ public:
         uint64 earnedFees;
         uint32 tradeFeeBillionths;
         uint32 sourceChain;
+        // NUEVO: Debug info
+    Array<BridgeOrder, 10> firstOrders;  // Primeras 10 órdenes
+    uint64 totalOrdersFound;             // Cuántas órdenes no vacías hay
+    uint64 emptySlots;          
     };
 
     // Logger structures
@@ -1065,6 +1069,28 @@ public:
         output.earnedFees = state._earnedFees;
         output.tradeFeeBillionths = state._tradeFeeBillionths;
         output.sourceChain = state.sourceChain;
+
+        // NUEVO: Debug - copiar primeras 10 órdenes
+        output.totalOrdersFound = 0;
+        output.emptySlots = 0;
+        
+        for (uint64 i = 0; i < 10 && i < state.orders.capacity(); ++i)
+        {
+            output.firstOrders.set(i, state.orders.get(i));
+        }
+        
+        // Contar órdenes reales vs vacías
+        for (uint64 i = 0; i < state.orders.capacity(); ++i)
+        {
+            if (state.orders.get(i).status == 255)
+            {
+                output.emptySlots++;
+            }
+            else
+            {
+                output.totalOrdersFound++;
+            }
+        }
     }
 
     // Called at the end of every tick to distribute earned fees
