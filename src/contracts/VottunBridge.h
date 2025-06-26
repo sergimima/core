@@ -178,7 +178,7 @@ public:
         uint32 tradeFeeBillionths;
         uint32 sourceChain;
         // NUEVO: Debug info
-    Array<BridgeOrder, 10> firstOrders;  // Primeras 10 órdenes
+    Array<BridgeOrder, 16> firstOrders;  // Primeras 10 órdenes
     uint64 totalOrdersFound;             // Cuántas órdenes no vacías hay
     uint64 emptySlots;          
     };
