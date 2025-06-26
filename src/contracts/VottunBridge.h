@@ -33,6 +33,7 @@ public:
     struct createOrder_output
     {
         uint8 status;
+        uint64 orderId;
     };
 
     struct setAdmin_input
@@ -352,6 +353,7 @@ public:
                     0};
                 LOG_INFO(locals.log);
                 output.status = 0; // Success
+                output.orderId = locals.newOrder.orderId;  // ← FALTA ESTO
                 return;
             }
         }
