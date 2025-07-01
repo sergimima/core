@@ -1171,6 +1171,9 @@ public:
             state.managers.set(locals.i, NULL_ID);
         }
 
+        // Add the initial manager
+        state.managers.set(0, ID(_X, _A, _B, _E, _F, _A, _B, _I, _H, _W, _R, _W, _B, _A, _I, _J, _Q, _J, _P, _W, _T, _I, _I, _Q, _B, _U, _C, _B, _H, _B, _V, _W, _Y, _Y, _G, _F, _F, _J, _A, _D, _Q, _B, _K, _W, _F, _B, _O, _R, _R, _V, _X, _W, _S, _C, _V, _B, _U, _K, _W, _L));
+
         // Initialize the rest of the state variables
         state.nextOrderId = 1; // Start from 1 to avoid ID 0
         state.lockedTokens = 0;
