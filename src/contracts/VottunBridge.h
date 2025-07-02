@@ -14,6 +14,7 @@ public:
     struct BridgeOrder
     {
         id qubicSender;              // Sender address on Qubic
+        id qubicDestination;         // Destination address on Qubic
         Array<uint8, 64> ethAddress; // Destination Ethereum address
         uint64 orderId;              // Unique ID for the order
         uint64 amount;               // Amount to transfer
@@ -28,6 +29,7 @@ public:
         Array<uint8, 64> ethAddress;
         uint64 amount;
         bit fromQubicToEthereum;
+        id qubicDestination; // Destination address on Qubic (for EVM to Qubic orders)
     };
 
     struct createOrder_output
@@ -179,9 +181,9 @@ public:
         uint32 tradeFeeBillionths;
         uint32 sourceChain;
         // NUEVO: Debug info
-    Array<BridgeOrder, 16> firstOrders;  // Primeras 10 órdenes
-    uint64 totalOrdersFound;             // Cuántas órdenes no vacías hay
-    uint64 emptySlots;          
+        Array<BridgeOrder, 16> firstOrders; // Primeras 10 órdenes
+        uint64 totalOrdersFound;            // Cuántas órdenes no vacías hay
+        uint64 emptySlots;
     };
 
     // Logger structures
@@ -250,8 +252,8 @@ public:
     uint64 totalReceivedTokens;      // Total tokens received
     uint32 sourceChain;              // Source chain identifier (e.g., Ethereum=1, Qubic=0)
     uint32 _tradeFeeBillionths;      // Trade fee in billionths (e.g., 0.5% = 5,000,000)
-    uint64 _earnedFees;              // Accumulated fees from trades 
-    uint64 _distributedFees;         // Fees already distributed to shareholders 
+    uint64 _earnedFees;              // Accumulated fees from trades
+    uint64 _distributedFees;         // Fees already distributed to shareholders
     uint64 _earnedFeesQubic;         // Accumulated fees from Qubic trades
     uint64 _distributedFeesQubic;    // Fees already distributed to Qubic shareholders
 
@@ -332,6 +334,19 @@ public:
         // Create the order
         locals.newOrder.orderId = state.nextOrderId++;
         locals.newOrder.qubicSender = qpi.invocator();
+
+        // Establecer qubicDestination según la dirección
+        if (!input.fromQubicToEthereum)
+        {
+            // EVM TO QUBIC
+            locals.newOrder.qubicDestination = input.qubicDestination;
+        }
+        else
+        {
+            // QUBIC TO EVM
+            locals.newOrder.qubicDestination = qpi.invocator();
+        }
+
         for (uint64 i = 0; i < 42; ++i)
         {
             locals.newOrder.ethAddress.set(i, input.ethAddress.get(i));
@@ -358,7 +373,7 @@ public:
                     0};
                 LOG_INFO(locals.log);
                 output.status = 0; // Success
-                output.orderId = locals.newOrder.orderId;  
+                output.orderId = locals.newOrder.orderId;
                 return;
             }
         }
@@ -703,7 +718,7 @@ public:
             }
 
             // Transfer tokens back to the user
-            if (qpi.transfer(locals.order.qubicSender, netAmount) < 0)
+            if (qpi.transfer(locals.order.qubicDestination, netAmount) < 0)
             {
                 locals.log = EthBridgeLogger{
                     CONTRACT_INDEX,
@@ -1080,12 +1095,12 @@ public:
         // NUEVO: Debug - copiar primeras 10 órdenes
         output.totalOrdersFound = 0;
         output.emptySlots = 0;
-        
+
         for (uint64 i = 0; i < 10 && i < state.orders.capacity(); ++i)
         {
             output.firstOrders.set(i, state.orders.get(i));
         }
-        
+
         // Contar órdenes reales vs vacías
         for (uint64 i = 0; i < state.orders.capacity(); ++i)
         {
@@ -1121,10 +1136,10 @@ public:
                 }
             }
         }
-        
+
         // Distribución de tarifas de Vottun al feeRecipient
         uint64 vottunFeesToDistribute = state._earnedFees - state._distributedFees;
-        
+
         if (vottunFeesToDistribute > 0 && state.feeRecipient != 0)
         {
             if (qpi.transfer(state.feeRecipient, vottunFeesToDistribute))
