@@ -250,8 +250,10 @@ public:
     uint64 totalReceivedTokens;      // Total tokens received
     uint32 sourceChain;              // Source chain identifier (e.g., Ethereum=1, Qubic=0)
     uint32 _tradeFeeBillionths;      // Trade fee in billionths (e.g., 0.5% = 5,000,000)
-    uint64 _earnedFees;              // Accumulated fees from trades
-    uint64 _distributedFees;         // Fees already distributed to shareholders
+    uint64 _earnedFees;              // Accumulated fees from trades 
+    uint64 _distributedFees;         // Fees already distributed to shareholders 
+    uint64 _earnedFeesQubic;         // Accumulated fees from Qubic trades
+    uint64 _distributedFeesQubic;    // Fees already distributed to Qubic shareholders
 
     // Internal methods for admin/manager permissions
     typedef id isAdmin_input;
@@ -304,11 +306,13 @@ public:
             return;
         }
 
-        // Calculate fee as percentage of amount (0.5%)
-        uint64 requiredFee = (input.amount * state._tradeFeeBillionths) / 1000000000ULL;
+        // Calculate fees as percentage of amount (0.5% each, 1% total)
+        uint64 requiredFeeEth = (input.amount * state._tradeFeeBillionths) / 1000000000ULL;
+        uint64 requiredFeeQubic = (input.amount * state._tradeFeeBillionths) / 1000000000ULL;
+        uint64 totalRequiredFee = requiredFeeEth + requiredFeeQubic;
 
-        // Verify that the fee paid is sufficient
-        if (qpi.invocationReward() < static_cast<sint64>(requiredFee))
+        // Verify that the fee paid is sufficient for both fees
+        if (qpi.invocationReward() < static_cast<sint64>(totalRequiredFee))
         {
             locals.log = EthBridgeLogger{
                 CONTRACT_INDEX,
@@ -321,8 +325,9 @@ public:
             return;
         }
 
-        // Accumulate the collected fee
-        state._earnedFees += requiredFee;
+        // Acumular las tarifas en sus respectivas variables
+        state._earnedFees += requiredFeeEth;
+        state._earnedFeesQubic += requiredFeeQubic;
 
         // Create the order
         locals.newOrder.orderId = state.nextOrderId++;
@@ -353,7 +358,7 @@ public:
                     0};
                 LOG_INFO(locals.log);
                 output.status = 0; // Success
-                output.orderId = locals.newOrder.orderId;  // ← FALTA ESTO
+                output.orderId = locals.newOrder.orderId;  
                 return;
             }
         }
@@ -1100,7 +1105,7 @@ public:
     /*
     END_TICK()
     {
-        uint64 feesToDistributeInThisTick = state._earnedFees - state._distributedFees;
+        uint64 feesToDistributeInThisTick = state._earnedFeesQubic - state._distributedFeesQubic;
 
         if (feesToDistributeInThisTick > 0)
         {
@@ -1112,8 +1117,19 @@ public:
             {
                 if (qpi.distributeDividends(amountPerComputor))
                 {
-                    state._distributedFees += amountPerComputor * NUMBER_OF_COMPUTORS;
+                    state._distributedFeesQubic += amountPerComputor * NUMBER_OF_COMPUTORS;
                 }
+            }
+        }
+        
+        // Distribución de tarifas de Vottun al feeRecipient
+        uint64 vottunFeesToDistribute = state._earnedFees - state._distributedFees;
+        
+        if (vottunFeesToDistribute > 0 && state.feeRecipient != 0)
+        {
+            if (qpi.transfer(state.feeRecipient, vottunFeesToDistribute))
+            {
+                state._distributedFees += vottunFeesToDistribute;
             }
         }
     }
@@ -1184,5 +1200,8 @@ public:
         state._tradeFeeBillionths = 5000000; // 0.5% == 5,000,000 / 1,000,000,000
         state._earnedFees = 0;
         state._distributedFees = 0;
+
+        state._earnedFeesQubic = 0;
+        state._distributedFeesQubic = 0;
     }
 };
