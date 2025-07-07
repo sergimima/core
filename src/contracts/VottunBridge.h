@@ -141,6 +141,7 @@ public:
         uint64 amount;                       // Amount as uint64
         Array<uint8, 64> memo;               // Notes or metadata
         uint32 sourceChain;                  // Source chain identifier
+        id qubicDestination; 
     };
 
     struct getOrder_input
@@ -415,6 +416,8 @@ public:
                 locals.orderResp.destinationAccount = locals.order.ethAddress;
                 locals.orderResp.amount = locals.order.amount;
                 locals.orderResp.sourceChain = state.sourceChain;
+                locals.orderResp.qubicDestination = locals.order.qubicDestination; // <-- Añade esta línea
+
 
                 locals.log = EthBridgeLogger{
                     CONTRACT_INDEX,
@@ -1014,6 +1017,7 @@ public:
     {
         uint8 status;   // Operation status (0 = success, other = error)
         uint64 orderId; // ID of the found order
+        id qubicDestination; // Destination address on Qubic (for EVM to Qubic orders)
     };
 
     // Function to search for an order by details
