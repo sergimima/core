@@ -1117,7 +1117,7 @@ public:
 
     // Called at the end of every tick to distribute earned fees
     // COMENTADO: Para evitar distribución automática y permitir withdrawFees
-    /*
+    
     END_TICK()
     {
         uint64 feesToDistributeInThisTick = state._earnedFeesQubic - state._distributedFeesQubic;
@@ -1148,7 +1148,7 @@ public:
             }
         }
     }
-    */
+    
 
     // Register Functions and Procedures
     REGISTER_USER_FUNCTIONS_AND_PROCEDURES()
