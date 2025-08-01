@@ -141,7 +141,7 @@ public:
         uint64 amount;                       // Amount as uint64
         Array<uint8, 64> memo;               // Notes or metadata
         uint32 sourceChain;                  // Source chain identifier
-        id qubicDestination; 
+        id qubicDestination;
     };
 
     struct getOrder_input
@@ -239,7 +239,8 @@ public:
         insufficientLockedTokens = 6,
         transferFailed = 7,
         maxManagersReached = 8,
-        notAuthorized = 9
+        notAuthorized = 9,
+        onlyManagersCanRefundOrders = 10
     };
 
 public:
@@ -303,7 +304,7 @@ public:
                 EthBridgeError::invalidAmount,
                 0,
                 input.amount,
-                0};
+                0 };
             LOG_INFO(locals.log);
             output.status = 1; // Error
             return;
@@ -322,13 +323,13 @@ public:
                 EthBridgeError::insufficientTransactionFee,
                 0,
                 input.amount,
-                0};
+                0 };
             LOG_INFO(locals.log);
             output.status = 2; // Error
             return;
         }
 
-        // Acumular las tarifas en sus respectivas variables
+        // Accumulate fees in their respective variables
         state._earnedFees += requiredFeeEth;
         state._earnedFeesQubic += requiredFeeQubic;
 
@@ -336,11 +337,25 @@ public:
         locals.newOrder.orderId = state.nextOrderId++;
         locals.newOrder.qubicSender = qpi.invocator();
 
-        // Establecer qubicDestination según la dirección
+        // Set qubicDestination according to the direction
         if (!input.fromQubicToEthereum)
         {
             // EVM TO QUBIC
             locals.newOrder.qubicDestination = input.qubicDestination;
+            
+            // Verify that there are enough locked tokens for EVM to Qubic orders
+            if (state.lockedTokens < input.amount)
+            {
+                locals.log = EthBridgeLogger{
+                    CONTRACT_INDEX,
+                    EthBridgeError::insufficientLockedTokens,
+                    0,
+                    input.amount,
+                    0 };
+                LOG_INFO(locals.log);
+                output.status = EthBridgeError::insufficientLockedTokens; // Error
+                return;
+            }
         }
         else
         {
@@ -371,7 +386,7 @@ public:
                     0, // No error
                     locals.newOrder.orderId,
                     input.amount,
-                    0};
+                    0 };
                 LOG_INFO(locals.log);
                 output.status = 0; // Success
                 output.orderId = locals.newOrder.orderId;
@@ -379,15 +394,56 @@ public:
             }
         }
 
-        // No available slots
+        // No available slots - attempt cleanup of completed orders
         if (!locals.slotFound)
         {
+            // Clean up completed and refunded orders to free slots
+            locals.cleanedSlots = 0;
+            for (uint64 j = 0; j < state.orders.capacity(); ++j)
+            {
+                if (state.orders.get(j).status == 2) // Completed or Refunded
+                {
+                    // Create empty order to overwrite
+                    locals.emptyOrder.status = 255; // Mark as empty
+                    locals.emptyOrder.orderId = 0;
+                    locals.emptyOrder.amount = 0;
+                    // Clear other fields as needed
+                    state.orders.set(j, locals.emptyOrder);
+                    locals.cleanedSlots++;
+                }
+            }
+            
+            // If we cleaned some slots, try to find a slot again
+            if (locals.cleanedSlots > 0)
+            {
+                for (locals.i = 0; locals.i < state.orders.capacity(); ++locals.i)
+                {
+                    if (state.orders.get(locals.i).status == 255)
+                    { // Empty slot
+                        state.orders.set(locals.i, locals.newOrder);
+                        locals.slotFound = true;
+
+                        locals.log = EthBridgeLogger{
+                            CONTRACT_INDEX,
+                            0, // No error
+                            locals.newOrder.orderId,
+                            input.amount,
+                            locals.cleanedSlots }; // Log number of cleaned slots
+                        LOG_INFO(locals.log);
+                        output.status = 0; // Success
+                        output.orderId = locals.newOrder.orderId;
+                        return;
+                    }
+                }
+            }
+            
+            // If still no slots available after cleanup
             locals.log = EthBridgeLogger{
                 CONTRACT_INDEX,
                 99, // Custom error code for "no available slots"
                 0,  // No orderId
-                0,  // No amount
-                0};
+                locals.cleanedSlots,  // Number of slots cleaned
+                0 };
             LOG_INFO(locals.log);
             output.status = 3; // Error: no available slots
             return;
@@ -424,7 +480,7 @@ public:
                     0, // No error
                     locals.order.orderId,
                     locals.order.amount,
-                    0};
+                    0 };
                 LOG_INFO(locals.log);
 
                 output.status = 0; // Success
@@ -439,7 +495,7 @@ public:
             EthBridgeError::orderNotFound,
             input.orderId,
             0, // No amount involved
-            0};
+            0 };
         LOG_INFO(locals.log);
         output.status = 1; // Error
     }
@@ -460,7 +516,7 @@ public:
                 EthBridgeError::notAuthorized,
                 0, // No order ID involved
                 0, // No amount involved
-                0};
+                0 };
             LOG_INFO(locals.log);
             output.status = EthBridgeError::notAuthorized; // Error
             return;
@@ -473,7 +529,7 @@ public:
             input.address,
             CONTRACT_INDEX,
             1, // Event code "Admin Changed"
-            0};
+            0 };
         LOG_INFO(locals.adminLog);
 
         locals.log = EthBridgeLogger{
@@ -481,7 +537,7 @@ public:
             0, // No error
             0, // No order ID involved
             0, // No amount involved
-            0};
+            0 };
         LOG_INFO(locals.log);
         output.status = 0; // Success
     }
@@ -502,7 +558,7 @@ public:
                 EthBridgeError::notAuthorized,
                 0, // No order ID involved
                 0, // No amount involved
-                0};
+                0 };
             LOG_INFO(locals.log);
             output.status = EthBridgeError::notAuthorized;
             return;
@@ -518,7 +574,7 @@ public:
                     input.address,
                     CONTRACT_INDEX,
                     2, // Manager added
-                    0};
+                    0 };
                 LOG_INFO(locals.managerLog);
                 output.status = 0; // Success
                 return;
@@ -531,7 +587,7 @@ public:
             EthBridgeError::maxManagersReached,
             0, // No orderId
             0, // No amount
-            0};
+            0 };
         LOG_INFO(locals.log);
         output.status = EthBridgeError::maxManagersReached;
         return;
@@ -553,7 +609,7 @@ public:
                 EthBridgeError::notAuthorized,
                 0, // No order ID involved
                 0, // No amount involved
-                0};
+                0 };
             LOG_INFO(locals.log);
             output.status = EthBridgeError::notAuthorized; // Error
             return;
@@ -569,7 +625,7 @@ public:
                     input.address,
                     CONTRACT_INDEX,
                     3, // Manager removed
-                    0};
+                    0 };
                 LOG_INFO(locals.managerLog);
                 output.status = 0; // Success
                 return;
@@ -581,7 +637,7 @@ public:
             0, // No error
             0, // No order ID involved
             0, // No amount involved
-            0};
+            0 };
         LOG_INFO(locals.log);
         output.status = 0; // Success
     }
@@ -598,7 +654,7 @@ public:
             0,                         // No error
             0,                         // No order ID involved
             state.totalReceivedTokens, // Amount of total tokens
-            0};
+            0 };
         LOG_INFO(locals.log);
         output.totalTokens = state.totalReceivedTokens;
     }
@@ -629,7 +685,7 @@ public:
                 EthBridgeError::onlyManagersCanCompleteOrders,
                 input.orderId,
                 0,
-                0};
+                0 };
             LOG_INFO(locals.log);
             output.status = EthBridgeError::onlyManagersCanCompleteOrders; // Error: not a manager
             return;
@@ -655,7 +711,7 @@ public:
                 EthBridgeError::orderNotFound,
                 input.orderId,
                 0,
-                0};
+                0 };
             LOG_INFO(locals.log);
             output.status = EthBridgeError::orderNotFound; // Error
             return;
@@ -669,7 +725,7 @@ public:
                 EthBridgeError::invalidOrderState,
                 input.orderId,
                 0,
-                0};
+                0 };
             LOG_INFO(locals.log);
             output.status = EthBridgeError::invalidOrderState; // Error
             return;
@@ -689,7 +745,7 @@ public:
                     EthBridgeError::insufficientLockedTokens,
                     input.orderId,
                     locals.order.amount,
-                    0};
+                    0 };
                 LOG_INFO(locals.log);
                 output.status = EthBridgeError::insufficientLockedTokens; // Error
                 return;
@@ -701,7 +757,7 @@ public:
                 CONTRACT_INDEX,
                 state.lockedTokens,
                 state.totalReceivedTokens,
-                0};
+                0 };
             LOG_INFO(locals.logTokens);
         }
         else
@@ -714,7 +770,7 @@ public:
                     EthBridgeError::insufficientLockedTokens,
                     input.orderId,
                     locals.order.amount,
-                    0};
+                    0 };
                 LOG_INFO(locals.log);
                 output.status = EthBridgeError::insufficientLockedTokens; // Error
                 return;
@@ -728,7 +784,7 @@ public:
                     EthBridgeError::transferFailed,
                     input.orderId,
                     locals.order.amount,
-                    0};
+                    0 };
                 LOG_INFO(locals.log);
                 output.status = EthBridgeError::transferFailed; // Error
                 return;
@@ -739,7 +795,7 @@ public:
                 CONTRACT_INDEX,
                 state.lockedTokens,
                 state.totalReceivedTokens,
-                0};
+                0 };
             LOG_INFO(locals.logTokens);
         }
 
@@ -753,7 +809,7 @@ public:
             0, // No error
             input.orderId,
             locals.order.amount,
-            0};
+            0 };
         LOG_INFO(locals.log);
     }
 
@@ -779,12 +835,12 @@ public:
         {
             locals.log = EthBridgeLogger{
                 CONTRACT_INDEX,
-                EthBridgeError::onlyManagersCanCompleteOrders,
+                EthBridgeError::onlyManagersCanRefundOrders,
                 input.orderId,
                 0, // No amount involved
-                0};
+                0 };
             LOG_INFO(locals.log);
-            output.status = EthBridgeError::onlyManagersCanCompleteOrders; // Error
+            output.status = EthBridgeError::onlyManagersCanRefundOrders; // Error
             return;
         }
 
@@ -808,7 +864,7 @@ public:
                 EthBridgeError::orderNotFound,
                 input.orderId,
                 0,
-                0};
+                0 };
             LOG_INFO(locals.log);
             output.status = EthBridgeError::orderNotFound; // Error
             return;
@@ -822,15 +878,35 @@ public:
                 EthBridgeError::invalidOrderState,
                 input.orderId,
                 0,
-                0};
+                0 };
             LOG_INFO(locals.log);
             output.status = EthBridgeError::invalidOrderState; // Error
+            return;
+        }
+        
+        // Verify if there are enough locked tokens for the refund
+        if (locals.order.fromQubicToEthereum && state.lockedTokens < locals.order.amount)
+        {
+            locals.log = EthBridgeLogger{
+                CONTRACT_INDEX,
+                EthBridgeError::insufficientLockedTokens,
+                input.orderId,
+                locals.order.amount,
+                0 };
+            LOG_INFO(locals.log);
+            output.status = EthBridgeError::insufficientLockedTokens; // Error
             return;
         }
 
         // Update the status and refund tokens
         qpi.transfer(locals.order.qubicSender, locals.order.amount);
-        state.lockedTokens -= locals.order.amount;
+        
+        // Only decrease locked tokens for Qubic-to-Ethereum orders
+        if (locals.order.fromQubicToEthereum)
+        {
+            state.lockedTokens -= locals.order.amount;
+        }
+        
         locals.order.status = 2;                  // Refunded
         state.orders.set(locals.i, locals.order); // Use the loop index instead of orderId
 
@@ -839,7 +915,7 @@ public:
             0, // No error
             input.orderId,
             locals.order.amount,
-            0};
+            0 };
         LOG_INFO(locals.log);
         output.status = 0; // Success
     }
@@ -860,7 +936,7 @@ public:
                 EthBridgeError::invalidAmount,
                 0, // No order ID
                 input.amount,
-                0};
+                0 };
             LOG_INFO(locals.log);
             output.status = EthBridgeError::invalidAmount; // Error
             return;
@@ -874,7 +950,7 @@ public:
                 EthBridgeError::transferFailed,
                 0, // No order ID
                 input.amount,
-                0};
+                0 };
             LOG_INFO(locals.log);
             return;
         }
@@ -885,7 +961,7 @@ public:
             CONTRACT_INDEX,
             state.lockedTokens,
             state.totalReceivedTokens,
-            0};
+            0 };
         LOG_INFO(locals.logTokens);
 
         locals.log = EthBridgeLogger{
@@ -893,7 +969,7 @@ public:
             0, // No error
             0, // No order ID
             input.amount,
-            0};
+            0 };
         LOG_INFO(locals.log);
         output.status = 0; // Success
     }
@@ -915,7 +991,7 @@ public:
                 EthBridgeError::notAuthorized,
                 0, // No order ID involved
                 0, // No amount involved
-                0};
+                0 };
             LOG_INFO(locals.log);
             output.status = EthBridgeError::notAuthorized;
             return;
@@ -932,7 +1008,7 @@ public:
                 EthBridgeError::insufficientLockedTokens, // Reutilizamos este error
                 0,                                        // No order ID
                 input.amount,
-                0};
+                0 };
             LOG_INFO(locals.log);
             output.status = EthBridgeError::insufficientLockedTokens;
             return;
@@ -946,7 +1022,7 @@ public:
                 EthBridgeError::invalidAmount,
                 0, // No order ID
                 input.amount,
-                0};
+                0 };
             LOG_INFO(locals.log);
             output.status = EthBridgeError::invalidAmount;
             return;
@@ -960,7 +1036,7 @@ public:
                 EthBridgeError::transferFailed,
                 0, // No order ID
                 input.amount,
-                0};
+                0 };
             LOG_INFO(locals.log);
             output.status = EthBridgeError::transferFailed;
             return;
@@ -975,7 +1051,7 @@ public:
             0, // No error
             0, // No order ID
             input.amount,
-            0};
+            0 };
         LOG_INFO(locals.log);
 
         output.status = 0; // Success
@@ -997,7 +1073,7 @@ public:
             0,                  // No error
             0,                  // No order ID involved
             state.lockedTokens, // Amount of locked tokens
-            0};
+            0 };
         LOG_INFO(locals.log);
 
         // Assign the value of lockedTokens to the output
@@ -1076,6 +1152,87 @@ public:
         output.orderId = 0;
     }
 
+    // Add Liquidity structures
+    struct addLiquidity_input
+    {
+        // No input parameters - amount comes from qpi.invocationReward()
+    };
+
+    struct addLiquidity_output
+    {
+        uint8 status;           // Operation status (0 = success, other = error)
+        uint64 addedAmount;     // Amount of tokens added to liquidity
+        uint64 totalLocked;     // Total locked tokens after addition
+    };
+
+    struct addLiquidity_locals
+    {
+        EthBridgeLogger log;
+        id invocatorAddress;
+        bit isManagerOperating;
+        uint64 depositAmount;
+    };
+
+    // Add liquidity to the bridge (for managers to provide initial/additional liquidity)
+    PUBLIC_PROCEDURE_WITH_LOCALS(addLiquidity)
+    {
+        locals.invocatorAddress = qpi.invocator();
+        locals.isManagerOperating = false;
+        CALL(isManager, locals.invocatorAddress, locals.isManagerOperating);
+
+        // Verify that the invocator is a manager or admin
+        if (!locals.isManagerOperating && locals.invocatorAddress != state.admin)
+        {
+            locals.log = EthBridgeLogger{
+                CONTRACT_INDEX,
+                EthBridgeError::notAuthorized,
+                0, // No order ID involved
+                0, // No amount involved
+                0
+            };
+            LOG_INFO(locals.log);
+            output.status = EthBridgeError::notAuthorized;
+            return;
+        }
+
+        // Get the amount of tokens sent with this call
+        locals.depositAmount = qpi.invocationReward();
+
+        // Validate that some tokens were sent
+        if (locals.depositAmount == 0)
+        {
+            locals.log = EthBridgeLogger{
+                CONTRACT_INDEX,
+                EthBridgeError::invalidAmount,
+                0, // No order ID involved
+                0, // No amount involved
+                0
+            };
+            LOG_INFO(locals.log);
+            output.status = EthBridgeError::invalidAmount;
+            return;
+        }
+
+        // Add the deposited tokens to the locked tokens pool
+        state.lockedTokens += locals.depositAmount;
+        state.totalReceivedTokens += locals.depositAmount;
+
+        // Log the successful liquidity addition
+        locals.log = EthBridgeLogger{
+            CONTRACT_INDEX,
+            0, // No error
+            0, // No order ID involved
+            locals.depositAmount, // Amount added
+            state.lockedTokens // New total locked tokens
+        };
+        LOG_INFO(locals.log);
+
+        // Set output values
+        output.status = 0; // Success
+        output.addedAmount = locals.depositAmount;
+        output.totalLocked = state.lockedTokens;
+    }
+
     // NUEVA: Get Available Fees function
     PUBLIC_FUNCTION(getAvailableFees)
     {
@@ -1121,7 +1278,7 @@ public:
 
     // Called at the end of every tick to distribute earned fees
     // COMENTADO: Para evitar distribución automática y permitir withdrawFees
-    
+
     END_TICK()
     {
         uint64 feesToDistributeInThisTick = state._earnedFeesQubic - state._distributedFeesQubic;
@@ -1152,7 +1309,7 @@ public:
             }
         }
     }
-    
+
 
     // Register Functions and Procedures
     REGISTER_USER_FUNCTIONS_AND_PROCEDURES()
@@ -1175,6 +1332,7 @@ public:
         REGISTER_USER_PROCEDURE(refundOrder, 6);
         REGISTER_USER_PROCEDURE(transferToContract, 7);
         REGISTER_USER_PROCEDURE(withdrawFees, 8); // NUEVA función
+        REGISTER_USER_PROCEDURE(addLiquidity, 9); // NUEVA función para liquidez inicial
     }
 
     // Initialize the contract with SECURE ADMIN CONFIGURATION
